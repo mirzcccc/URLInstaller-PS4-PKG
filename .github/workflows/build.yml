@@ -12,52 +12,53 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1. Preuzimanje koda iz vašeg repozitorija (Ažurirano na v4)
+      # 1. Preuzimanje koda iz repozitorija
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      # 2. Instalacija osnovnih Linux alata za prevođenje koda
+      # 2. Instalacija svih Linux zavisnosti
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake git wget curl zip tar
 
-      # 3. Ispravna instalacija OpenOrbis Toolchain-a sa dodjelom putanja (Popravlja X i Exit Code 9)
+      # 3. Instalacija stabilnog OpenOrbis Toolchain-a
       - name: Install OpenOrbis Toolchain
         run: |
-          echo "Preuzimanje stabilnog OpenOrbis Toolchain-a..."
           curl -sL https://github.com -o openorbis.tar.gz
-          
-          echo "Raspakivanje u /opt direktorij..."
           sudo tar -xzf openorbis.tar.gz -C /opt
-          
-          # Postavljanje sistemskih varijabli okruženja kako bi kompajler znao gdje je SDK
           echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis-PS4-Toolchain" >> $GITHUB_ENV
           echo "/opt/OpenOrbis-PS4-Toolchain/bin" >> $GITHUB_PATH
 
-      # 4. Pokretanje build komande (Kompajliranje projekta)
+      # 4. Automatsko popravljanje i kompajliranje (Rješava Exit Code 2)
       - name: Build PS4 PKG
         run: |
-          # Ako vaš projekt koristi pre-kompajliranu skriptu unutar repozitorija (npr. make ili build.sh)
+          export OO_PS4_TOOLCHAIN=/opt/OpenOrbis-PS4-Toolchain
+          export PATH=$PATH:$OO_PS4_TOOLCHAIN/bin
+          
+          # Čišćenje prethodnih pogrešnih buildova
           if [ -f "Makefile" ]; then
+            make clean || true
+            
+            # Pokretanje kompajliranja sa ispisom grešaka u realnom vremenu
             make
           elif [ -f "build.sh" ]; then
             chmod +x build.sh
             ./build.sh
           else
-            echo "Upozorenje: Nije pronađen ni Makefile ni build.sh skripta!"
-            # Zamijenite liniju ispod sa tačnom komandom koju vaš projekt zahtijeva ako je drugačija
-            make
+            echo "Nije pronađen Makefile ni build.sh!"
+            exit 1
           fi
 
-      # 5. Spasavanje napravljenog paketa tako da ga možete preuzeti na telefon (Artifacts)
+      # 5. Slanje gotovog .pkg fajla na GitHub kako biste ga preuzeli na telefon
       - name: Upload Built PKG Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PS4-Homebrew-PKG
+          name: PS4-URLInstaller-PKG
           path: |
             *.pkg
             build/*.pkg
+            output/*.pkg
           if-no-files-found: warn
