@@ -2,7 +2,9 @@ name: Build PS4 Homebrew PKG
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
@@ -10,30 +12,52 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout Code
+      # 1. Preuzimanje koda iz vašeg repozitorija (Ažurirano na v4)
+      - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Install System Dependencies
+      # 2. Instalacija osnovnih Linux alata za prevođenje koda
+      - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget clang lld mono-devel unzip
+          sudo apt-get install -y build-essential cmake git wget curl zip tar
 
+      # 3. Ispravna instalacija OpenOrbis Toolchain-a sa dodjelom putanja (Popravlja X i Exit Code 9)
       - name: Install OpenOrbis Toolchain
         run: |
-          wget https://github.com
-          unzip OpenOrbis-PS4-Toolchain-v0.5.2.zip -d openorbis
-          echo "OO_PS4_TOOLCHAIN=$GITHUB_WORKSPACE/openorbis" >> $GITHUB_ENV
+          echo "Preuzimanje stabilnog OpenOrbis Toolchain-a..."
+          curl -sL https://github.com -o openorbis.tar.gz
+          
+          echo "Raspakivanje u /opt direktorij..."
+          sudo tar -xzf openorbis.tar.gz -C /opt
+          
+          # Postavljanje sistemskih varijabli okruženja kako bi kompajler znao gdje je SDK
+          echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis-PS4-Toolchain" >> $GITHUB_ENV
+          echo "/opt/OpenOrbis-PS4-Toolchain/bin" >> $GITHUB_PATH
 
-      - name: Compile C++ Source Code
+      # 4. Pokretanje build komande (Kompajliranje projekta)
+      - name: Build PS4 PKG
         run: |
-          $OO_PS4_TOOLCHAIN/bin/linux/orbis-clang main.cpp -o eboot.bin -lkernel
+          # Ako vaš projekt koristi pre-kompajliranu skriptu unutar repozitorija (npr. make ili build.sh)
+          if [ -f "Makefile" ]; then
+            make
+          elif [ -f "build.sh" ]; then
+            chmod +x build.sh
+            ./build.sh
+          else
+            echo "Upozorenje: Nije pronađen ni Makefile ni build.sh skripta!"
+            # Zamijenite liniju ispod sa tačnom komandom koju vaš projekt zahtijeva ako je drugačija
+            make
+          fi
 
-      - name: Build Final Fake PKG
-        run: |
-          mono $OO_PS4_TOOLCHAIN/bin/PublishingTools/orbis-pub-cmd.exe img_create config.gp4 DirectDownloader.pkg
-
-      - name: Upload Finished PKG to GitHub
+      # 5. Spasavanje napravljenog paketa tako da ga možete preuzeti na telefon (Artifacts)
+      - name: Upload Built PKG Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PS4-Direct-Installer-PKG
-          path: DirectDownloader.pkg
+          name: PS4-Homebrew-PKG
+          path: |
+            *.pkg
+            build/*.pkg
+          if-no-files-found: warn
