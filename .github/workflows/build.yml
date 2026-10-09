@@ -1,0 +1,39 @@
+name: Build PS4 Homebrew PKG
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget clang lld mono-devel unzip
+
+      - name: Install OpenOrbis Toolchain
+        run: |
+          wget https://github.com
+          unzip OpenOrbis-PS4-Toolchain-v0.5.2.zip -d openorbis
+          echo "OO_PS4_TOOLCHAIN=$GITHUB_WORKSPACE/openorbis" >> $GITHUB_ENV
+
+      - name: Compile C++ Source Code
+        run: |
+          $OO_PS4_TOOLCHAIN/bin/linux/orbis-clang main.cpp -o eboot.bin -lkernel -lcurl
+
+      - name: Build Final Fake PKG
+        run: |
+          mono $OO_PS4_TOOLCHAIN/bin/PublishingTools/orbis-pub-cmd.exe img_create config.gp4 DirectDownloader.pkg
+
+      - name: Upload Finished PKG to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: PS4-Direct-Installer-PKG
+          path: DirectDownloader.pkg
