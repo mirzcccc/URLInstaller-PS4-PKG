@@ -1,0 +1,32 @@
+name: Build PS4 Homebrew PKG
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: xfangfang/pacbrew:latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Compile C++ Source Code
+        run: |
+          source /opt/pacbrew/ps4/openorbis/ps4vars.sh
+          orbis-clang main.cpp -o eboot.bin -lkernel -lX86_64 -lcurl
+
+      - name: Build Final Fake PKG
+        run: |
+          source /opt/pacbrew/ps4/openorbis/ps4vars.sh
+          orbis-pub-gen create_pkg config.gp4 DirectDownloader.pkg
+
+      - name: Upload Finished PKG to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: PS4-Direct-Installer-PKG
+          path: DirectDownloader.pkg
