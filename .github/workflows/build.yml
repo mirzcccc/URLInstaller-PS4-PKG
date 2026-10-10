@@ -9,17 +9,19 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install system dependencies
         shell: bash
         run: |
+          set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential git curl ca-certificates xz-utils unzip
+            build-essential git curl ca-certificates xz-utils unzip python3
 
       - name: Install OpenOrbis PS4 Toolchain
         shell: bash
@@ -29,32 +31,69 @@ jobs:
           rm -rf /tmp/orbis-toolchain
           git clone --depth 1 https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git /tmp/orbis-toolchain
 
-          # The upstream toolchain repo does not provide setup.sh in the expected locations.
-          # Add the toolchain bin directories directly to PATH.
-          echo "/tmp/orbis-toolchain/bin" >> "$GITHUB_PATH"
-          echo "/tmp/orbis-toolchain/usr/bin" >> "$GITHUB_PATH"
+          # The repo layout is not always stable. Search for the actual binaries
+          # and add their parent directories to PATH instead of assuming fixed paths.
+          mapfile -t toolchain_dirs < <(find /tmp/orbis-toolchain -type f \( \
+            -name 'orbis-clang++' -o \
+            -name 'orbis-objcopy' -o \
+            -name 'orbis-pub-gen' \
+          \) -printf '%h\n' | sort -u)
 
-          if ! command -v orbis-clang++ >/dev/null 2>&1; then
-            echo "ERROR: orbis-clang++ was not installed to PATH"
-            find /tmp/orbis-toolchain -type f \( -name 'orbis-clang*' -o -name 'orbis-objcopy' \) | head -200
+          if [ "${#toolchain_dirs[@]}" -eq 0 ]; then
+            echo "ERROR: OpenOrbis toolchain binaries were not found."
+            echo "Repository contents:"
+            find /tmp/orbis-toolchain -maxdepth 4 -type f | head -200 || true
             exit 1
           fi
 
-      - name: Compile PS4 Source Code
+          for dir in "${toolchain_dirs[@]}"; do
+            echo "$dir" >> "$GITHUB_PATH"
+          done
+
+          export PATH
+          echo "PATH updated with:"
+          printf '%s\n' "${toolchain_dirs[@]}"
+
+          command -v orbis-clang++ || { echo "orbis-clang++ not found in PATH"; exit 1; }
+          command -v orbis-objcopy || { echo "orbis-objcopy not found in PATH"; exit 1; }
+
+      - name: Build PS4 ELF and BIN
         shell: bash
         run: |
           set -euxo pipefail
 
+          export PATH="/tmp/orbis-toolchain/bin:/tmp/orbis-toolchain/usr/bin:$PATH"
+
           sed -i 's/\r$//' Makefile || true
           sed -i 's/\r$//' main.cpp || true
 
-          command -v orbis-clang++
+          make clean || true
           make
 
-      - name: Upload Finished PS4 Binary
+      - name: Generate PS4 package if packaging tool is available
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          export PATH="/tmp/orbis-toolchain/bin:/tmp/orbis-toolchain/usr/bin:$PATH"
+
+          if command -v orbis-pub-gen >/dev/null 2>&1; then
+            if [ -f "config.gp4" ]; then
+              echo "Found orbis-pub-gen, generating PKG..."
+              orbis-pub-gen config.gp4
+            else
+              echo "config.gp4 not found; skipping pkg generation."
+            fi
+          else
+            echo "orbis-pub-gen not found in PATH."
+            echo "This repo can still build the PS4 .bin/.elf, but a valid PS4 .pkg requires the package tool and signing key."
+          fi
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: PS4-Executable-Binaries
+          name: PS4-build-artifacts
           path: |
             ./*.bin
             ./*.elf
+            ./*.pkg
