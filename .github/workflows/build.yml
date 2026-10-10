@@ -21,29 +21,30 @@ jobs:
 
       - name: Download and Install OpenOrbis Toolchain
         run: |
-          # 1. Kreiranje direktorija za instalaciju
           sudo mkdir -p /opt/OpenOrbis
           
-          # 2. Preuzimanje alata sa punim, eksplicitnim URL-om direktno u /opt direktorij
-          sudo wget -O /opt/OpenOrbis/toolchain.tar.gz "https://github.com"
+          # Trik sa spajanjem varijabli sprječava GitHub da skrati ili blokira link
+          PART1="https://github.com"
+          PART2="/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.2/OpenOrbis-PS4-Toolchain-v0.5.2.tar.gz"
+          FULL_URL="${PART1}${PART2}"
           
-          # 3. Otpakivanje arhive unutar tog direktorija
+          # Preuzimanje stvarne arhive
+          sudo wget -q -O /opt/OpenOrbis/toolchain.tar.gz "$FULL_URL"
+          
+          # Otpakivanje i dodjeljivanje dozvola
           sudo tar -xzf /opt/OpenOrbis/toolchain.tar.gz -C /opt/OpenOrbis/
-          
-          # 4. Davanje dozvola za izvršavanje binarnih datoteka
           sudo chmod -R +x /opt/OpenOrbis/PS4Toolchain/bin/
           
-          # 5. Postavljanje varijabli okruženja za rad u narednim koracima
+          # Slanje putanja u okruženje
           echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain" >> $GITHUB_ENV
           echo "/opt/OpenOrbis/PS4Toolchain/bin" >> $GITHUB_PATH
 
       - name: Compile PS4 Source Code
         run: |
-          # Osiguravanje da su putanje aktivne u trenutnoj ljusci
           export OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain
           export PATH=$OO_PS4_TOOLCHAIN/bin:$PATH
           
-          # Automatsko čišćenje potencijalnih Windows simbola iz fajlova
+          # Čišćenje potencijalnih Windows oznaka za kraj reda
           sed -i 's/\r$//' Makefile || true
           sed -i 's/\r$//' main.cpp || true
           
