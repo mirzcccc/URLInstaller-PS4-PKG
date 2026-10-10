@@ -40,8 +40,10 @@ jobs:
           export OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain
           export PATH=$OO_PS4_TOOLCHAIN/bin:$PATH
           
-          # Prilagođavanje Makefile-a za Linux ako ima Windows kosa crte (\)
-          sed -i 's/\\/\//g' Makefile || true
+          # Čišćenje skrivenih Windows oznaka za kraj reda (CRLF u LF)
+          sed -i 's/\r$//' Makefile || true
+          sed -i 's/\r$//' config.gp4 || true
+          sed -i 's/\r$//' main.cpp || true
           
           # Pokretanje kompajliranja
           make
