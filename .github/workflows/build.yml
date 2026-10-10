@@ -2,9 +2,9 @@ name: Build PS4 Homebrew Binary
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   build:
@@ -14,18 +14,29 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Build Tools
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld llvm make
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git curl ca-certificates xz-utils unzip
+
+      - name: Install OpenOrbis PS4 Toolchain
+        run: |
+          git clone --depth 1 https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git /tmp/orbis-toolchain
+          cd /tmp/orbis-toolchain
+          chmod +x ./setup.sh
+          ./setup.sh || true
+
+          echo "/tmp/orbis-toolchain/bin" >> "$GITHUB_PATH"
+          echo "/tmp/orbis-toolchain/usr/bin" >> "$GITHUB_PATH"
+          echo "ORBIS_TOOLCHAIN=/tmp/orbis-toolchain" >> "$GITHUB_ENV"
 
       - name: Compile PS4 Source Code
         run: |
-          # Uklanjanje nevidljivih Windows znakova
           sed -i 's/\r$//' Makefile || true
           sed -i 's/\r$//' main.cpp || true
-          
-          # Pokretanje kompajliranja
+
+          command -v orbis-clang++ || command -v orbis-clang || true
           make
 
       - name: Upload Finished PS4 Binary
