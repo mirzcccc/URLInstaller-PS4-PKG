@@ -28,20 +28,9 @@ jobs:
 
           rm -rf /tmp/orbis-toolchain
           git clone --depth 1 https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git /tmp/orbis-toolchain
-          cd /tmp/orbis-toolchain
 
-          if [ -f ./setup.sh ]; then
-            chmod +x ./setup.sh
-            ./setup.sh
-          elif [ -f ./scripts/setup.sh ]; then
-            chmod +x ./scripts/setup.sh
-            ./scripts/setup.sh
-          else
-            echo "ERROR: setup.sh not found in expected locations"
-            find /tmp/orbis-toolchain -maxdepth 3 -type f | head -200
-            exit 1
-          fi
-
+          # The upstream toolchain repo does not provide setup.sh in the expected locations.
+          # Add the toolchain bin directories directly to PATH.
           echo "/tmp/orbis-toolchain/bin" >> "$GITHUB_PATH"
           echo "/tmp/orbis-toolchain/usr/bin" >> "$GITHUB_PATH"
 
