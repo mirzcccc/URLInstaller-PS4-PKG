@@ -14,35 +14,23 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Compilers and Build Tools
+      - name: Install Build Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake wget tar clang lld llvm make
 
-      - name: Download and Install OpenOrbis Toolchain
-        run: |
-          # Pravljenje sigurnog foldera za instalaciju
-          sudo mkdir -p /opt/OpenOrbis
-          
-          # Preuzimanje sa ISPRAVNIM i PUNIM linkom
-          wget -q https://github.com
-          
-          # Otpakivanje direktno u direktorij
-          sudo tar -xzf OpenOrbis-PS4-Toolchain-v0.5.2.tar.gz -C /opt/OpenOrbis
-          
-          # Dodjeljivanje dozvola za pokretanje na Linuxu
-          sudo chmod -R +x /opt/OpenOrbis/PS4Toolchain/bin/
-          
-          # Postavljanje putanja u GitHub okruženje
-          echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain" >> $GITHUB_ENV
-          echo "/opt/OpenOrbis/PS4Toolchain/bin" >> $GITHUB_PATH
+      - name: Setup OpenOrbis PS4 Toolchain
+        uses: openorbis/setup-toolchain@v1
+        with:
+          version: '0.5.2'
 
       - name: Compile PS4 Source Code
         run: |
-          export OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain
-          export PATH=$OO_PS4_TOOLCHAIN/bin:$PATH
+          # Automatsko čišćenje potencijalnih Windows simbola iz fajlova
+          sed -i 's/\r$//' Makefile || true
+          sed -i 's/\r$//' main.cpp || true
           
-          # Pokretanje kompajliranja preko popravljenog alata
+          # Pokretanje kompajliranja
           make
 
       - name: Upload Finished PS4 Binary
