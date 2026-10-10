@@ -24,8 +24,19 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git /tmp/orbis-toolchain
           cd /tmp/orbis-toolchain
-          chmod +x ./setup.sh
-          ./setup.sh || true
+
+          echo "Toolchain files:"
+          ls -la
+
+          if [ -f ./setup.sh ]; then
+            chmod +x ./setup.sh
+            ./setup.sh || true
+          elif [ -f ./scripts/setup.sh ]; then
+            chmod +x ./scripts/setup.sh
+            ./scripts/setup.sh || true
+          else
+            echo "setup.sh not found in expected locations; continuing without it"
+          fi
 
           echo "/tmp/orbis-toolchain/bin" >> "$GITHUB_PATH"
           echo "/tmp/orbis-toolchain/usr/bin" >> "$GITHUB_PATH"
