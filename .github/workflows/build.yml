@@ -29,28 +29,42 @@ jobs:
           set -euxo pipefail
 
           rm -rf /tmp/orbis-toolchain
-          git clone --depth 1 https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git /tmp/orbis-toolchain
 
-          # The repo layout is not always stable. Search for the actual binaries
-          # and add their parent directories to PATH instead of assuming fixed paths.
-          mapfile -t toolchain_dirs < <(find /tmp/orbis-toolchain -type f \( \
-            -name 'orbis-clang++' -o \
-            -name 'orbis-objcopy' -o \
-            -name 'orbis-pub-gen' \
-          \) -printf '%h\n' | sort -u)
+          # Full clone: some toolchain repos do not expose binaries in the shallow/truncated layout
+          git clone --branch main --single-branch https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git /tmp/orbis-toolchain
+
+          echo "Checking toolchain repo layout..."
+          find /tmp/orbis-toolchain -maxdepth 4 -type d | head -200 || true
+
+          # Find actual binary directories recursively
+          mapfile -t toolchain_dirs < <(
+            find /tmp/orbis-toolchain -type f \( \
+              -name 'orbis-clang++' -o \
+              -name 'orbis-objcopy' -o \
+              -name 'orbis-pub-gen' \
+            \) -printf '%h\n' | sort -u
+          )
 
           if [ "${#toolchain_dirs[@]}" -eq 0 ]; then
             echo "ERROR: OpenOrbis toolchain binaries were not found."
             echo "Repository contents:"
-            find /tmp/orbis-toolchain -maxdepth 4 -type f | head -200 || true
+            find /tmp/orbis-toolchain -maxdepth 5 -type f | head -200 || true
             exit 1
           fi
 
+          echo "Found toolchain binary directories:"
+          printf '%s\n' "${toolchain_dirs[@]}"
+
+          # Add each real binary directory to PATH for later steps
           for dir in "${toolchain_dirs[@]}"; do
             echo "$dir" >> "$GITHUB_PATH"
           done
 
+          # Also export PATH in this shell so the verification commands below work
           export PATH
+          PATH="$(printf '%s:' "${toolchain_dirs[@]}")$PATH"
+          export PATH
+
           echo "PATH updated with:"
           printf '%s\n' "${toolchain_dirs[@]}"
 
@@ -62,7 +76,24 @@ jobs:
         run: |
           set -euxo pipefail
 
-          export PATH="/tmp/orbis-toolchain/bin:/tmp/orbis-toolchain/usr/bin:$PATH"
+          # If PATH wasn't persisted for this step, recover it from the repo
+          if ! command -v orbis-clang++ >/dev/null 2>&1; then
+            mapfile -t toolchain_dirs < <(
+              find /tmp/orbis-toolchain -type f \( \
+                -name 'orbis-clang++' -o \
+                -name 'orbis-objcopy' \
+              \) -printf '%h\n' | sort -u
+            )
+            if [ "${#toolchain_dirs[@]}" -eq 0 ]; then
+              echo "ERROR: Could not locate toolchain after clone."
+              exit 1
+            fi
+            export PATH="$(printf '%s:' "${toolchain_dirs[@]}")$PATH"
+          fi
+
+          echo "Using toolchain from:"
+          command -v orbis-clang++
+          command -v orbis-objcopy
 
           sed -i 's/\r$//' Makefile || true
           sed -i 's/\r$//' main.cpp || true
@@ -75,18 +106,17 @@ jobs:
         run: |
           set -euxo pipefail
 
-          export PATH="/tmp/orbis-toolchain/bin:/tmp/orbis-toolchain/usr/bin:$PATH"
-
-          if command -v orbis-pub-gen >/dev/null 2>&1; then
-            if [ -f "config.gp4" ]; then
-              echo "Found orbis-pub-gen, generating PKG..."
-              orbis-pub-gen config.gp4
-            else
-              echo "config.gp4 not found; skipping pkg generation."
-            fi
-          else
+          if ! command -v orbis-pub-gen >/dev/null 2>&1; then
             echo "orbis-pub-gen not found in PATH."
             echo "This repo can still build the PS4 .bin/.elf, but a valid PS4 .pkg requires the package tool and signing key."
+            exit 0
+          fi
+
+          if [ -f "config.gp4" ]; then
+            echo "Found orbis-pub-gen, generating PKG..."
+            orbis-pub-gen config.gp4
+          else
+            echo "config.gp4 not found; skipping pkg generation."
           fi
 
       - name: Upload build artifacts
