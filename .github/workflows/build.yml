@@ -27,6 +27,15 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential git curl ca-certificates xz-utils unzip python3 jq
 
+      - name: Cache OpenOrbis toolchain
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TOOLCHAIN_ROOT }}
+          key: orbis-toolchain-${{ runner.os }}-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            orbis-toolchain-${{ runner.os }}-
+
       - name: Install OpenOrbis PS4 Toolchain
         shell: bash
         run: |
@@ -39,18 +48,34 @@ jobs:
           git clone --depth=1 --recursive "$OPENORBIS_REPO" "$TOOLCHAIN_ROOT"
 
           echo "Checking toolchain repo layout..."
-          find "$TOOLCHAIN_ROOT" -maxdepth 4 -type d | head -200 || true
+          find "$TOOLCHAIN_ROOT" -maxdepth 5 -type d | head -200 || true
 
-          # Prefer the normal source-build flow if the repo includes it
-          if [ -f "$TOOLCHAIN_ROOT/build.sh" ]; then
-            echo "Found build.sh; building OpenOrbis toolchain..."
-            (cd "$TOOLCHAIN_ROOT" && bash ./build.sh)
-          elif [ -f "$TOOLCHAIN_ROOT/build-toolchain.sh" ]; then
-            echo "Found build-toolchain.sh; building OpenOrbis toolchain..."
-            (cd "$TOOLCHAIN_ROOT" && bash ./build-toolchain.sh)
+          TOOLCHAIN_BUILD_SCRIPT=""
+          CANDIDATE_SCRIPTS=(
+            "$TOOLCHAIN_ROOT/build.sh"
+            "$TOOLCHAIN_ROOT/build/build.sh"
+            "$TOOLCHAIN_ROOT/build-toolchain.sh"
+            "$TOOLCHAIN_ROOT/build/build-toolchain.sh"
+          )
+
+          for candidate in "${CANDIDATE_SCRIPTS[@]}"; do
+            if [ -f "$candidate" ]; then
+              TOOLCHAIN_BUILD_SCRIPT="$candidate"
+              break
+            fi
+          done
+
+          if [ -n "$TOOLCHAIN_BUILD_SCRIPT" ]; then
+            echo "Found build script: $TOOLCHAIN_BUILD_SCRIPT"
+            (cd "$(dirname "$TOOLCHAIN_BUILD_SCRIPT")" && bash "$(basename "$TOOLCHAIN_BUILD_SCRIPT")")
           elif [ -f "$TOOLCHAIN_ROOT/Makefile" ]; then
             echo "Found Makefile; building OpenOrbis toolchain..."
             (cd "$TOOLCHAIN_ROOT" && make -j"$(nproc)")
+          else
+            echo "No supported OpenOrbis build script or Makefile found."
+            echo "Repository contents:"
+            find "$TOOLCHAIN_ROOT" -maxdepth 5 -type f | head -200 || true
+            exit 1
           fi
 
           mapfile -t toolchain_dirs < <(
@@ -80,8 +105,12 @@ jobs:
           echo "PATH updated with:"
           printf '%s\n' "${toolchain_dirs[@]}"
 
-          command -v orbis-clang++ >/dev/null 2>&1 || { echo "orbis-clang++ not found in PATH"; exit 1; }
-          command -v orbis-objcopy >/dev/null 2>&1 || { echo "orbis-objcopy not found in PATH"; exit 1; }
+          for bin in orbis-clang++ orbis-objcopy; do
+            command -v "$bin" >/dev/null 2>&1 || {
+              echo "$bin not found in PATH"
+              exit 1
+            }
+          done
 
       - name: Build PS4 ELF and BIN
         shell: bash
@@ -92,7 +121,6 @@ jobs:
           sed -i 's/\r$//' Makefile || true
           sed -i 's/\r$//' main.cpp || true
 
-          # Make sure compiler is actually visible
           command -v orbis-clang++ >/dev/null 2>&1 || {
             echo "OpenOrbis clang not found; cannot build."
             exit 1
@@ -103,7 +131,7 @@ jobs:
           }
 
           make clean || true
-          make
+          make -j"$(nproc)"
 
       - name: Generate PS4 package if packaging tool is available
         shell: bash
