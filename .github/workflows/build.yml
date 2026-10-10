@@ -14,40 +14,52 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install system dependencies
+        shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential git curl ca-certificates xz-utils unzip
 
       - name: Install OpenOrbis PS4 Toolchain
+        shell: bash
         run: |
+          set -euxo pipefail
+
+          rm -rf /tmp/orbis-toolchain
           git clone --depth 1 https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git /tmp/orbis-toolchain
           cd /tmp/orbis-toolchain
 
-          echo "Toolchain files:"
-          ls -la
-
           if [ -f ./setup.sh ]; then
             chmod +x ./setup.sh
-            ./setup.sh || true
+            ./setup.sh
           elif [ -f ./scripts/setup.sh ]; then
             chmod +x ./scripts/setup.sh
-            ./scripts/setup.sh || true
+            ./scripts/setup.sh
           else
-            echo "setup.sh not found in expected locations; continuing without it"
+            echo "ERROR: setup.sh not found in expected locations"
+            find /tmp/orbis-toolchain -maxdepth 3 -type f | head -200
+            exit 1
           fi
 
           echo "/tmp/orbis-toolchain/bin" >> "$GITHUB_PATH"
           echo "/tmp/orbis-toolchain/usr/bin" >> "$GITHUB_PATH"
-          echo "ORBIS_TOOLCHAIN=/tmp/orbis-toolchain" >> "$GITHUB_ENV"
+
+          if ! command -v orbis-clang++ >/dev/null 2>&1; then
+            echo "ERROR: orbis-clang++ was not installed to PATH"
+            find /tmp/orbis-toolchain -type f \( -name 'orbis-clang*' -o -name 'orbis-objcopy' \) | head -200
+            exit 1
+          fi
 
       - name: Compile PS4 Source Code
+        shell: bash
         run: |
+          set -euxo pipefail
+
           sed -i 's/\r$//' Makefile || true
           sed -i 's/\r$//' main.cpp || true
 
-          command -v orbis-clang++ || command -v orbis-clang || true
+          command -v orbis-clang++
           make
 
       - name: Upload Finished PS4 Binary
