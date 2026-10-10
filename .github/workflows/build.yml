@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
@@ -17,46 +17,15 @@ jobs:
       - name: Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake wget tar clang lld llvm make
-
-      # Ključni korak koji sprečava Exit Code 8 (omogućava pokretanje OpenOrbis alata)
-      - name: Setup .NET Runtime
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '6.0.x'
-
-      - name: Download and Install OpenOrbis Toolchain
-        run: |
-          sudo mkdir -p /opt/OpenOrbis
-          
-          # Razbijanje linka sprečava GitHub filtere da ga blokiraju
-          PART1="https://github.com"
-          PART2="/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.2/OpenOrbis-PS4-Toolchain-v0.5.2.tar.gz"
-          FULL_URL="${PART1}${PART2}"
-          
-          # Preuzimanje stvarne arhive alata
-          sudo wget -q -O /opt/OpenOrbis/toolchain.tar.gz "$FULL_URL"
-          
-          # Otpakivanje arhive
-          sudo tar -xzf /opt/OpenOrbis/toolchain.tar.gz -C /opt/OpenOrbis/
-          
-          # Dodeljivanje izvršnih dozvola
-          sudo chmod -R +x /opt/OpenOrbis/PS4Toolchain/bin/
-          
-          # Slanje putanja u GitHub okruženje
-          echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain" >> $GITHUB_ENV
-          echo "/opt/OpenOrbis/PS4Toolchain/bin" >> $GITHUB_PATH
+          sudo apt-get install -y clang lld llvm make
 
       - name: Compile PS4 Source Code
         run: |
-          export OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain
-          export PATH=$OO_PS4_TOOLCHAIN/bin:$PATH
-          
-          # Čišćenje potencijalnih Windows oznaka za kraj reda
+          # Uklanjanje nevidljivih Windows znakova
           sed -i 's/\r$//' Makefile || true
           sed -i 's/\r$//' main.cpp || true
           
-          # Pokretanje kompajliranja preko popravljenih putanja
+          # Pokretanje kompajliranja
           make
 
       - name: Upload Finished PS4 Binary
