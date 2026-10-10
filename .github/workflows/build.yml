@@ -14,53 +14,40 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup .NET Runtime (Required for Toolchain Tools)
+      - name: Setup .NET Runtime (Required for OpenOrbis Tools)
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '6.0.x'
 
-      - name: Install Compilers and Build Tools
+      - name: Install Tools and Compilers
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake wget tar clang lld llvm make
 
-      - name: Download and Fix OpenOrbis Linux Toolchain
+      - name: Download and Install OpenOrbis Toolchain
         run: |
-          # Preuzimanje zvaničnog OpenOrbis izdanja
           wget https://github.com
           sudo mkdir -p /opt/OpenOrbis
           sudo tar -xzf OpenOrbis-PS4-Toolchain-v0.5.2.tar.gz -C /opt/OpenOrbis
-          
-          # KLJUČNI KORAK: Pretvaranje Windows linijskih završetaka u Linux ako postoje i davanje dozvola
           sudo chmod -R +x /opt/OpenOrbis/PS4Toolchain/bin/
           
-          # Postavljanje varijabli okruženja
+          # Definisanje okruženja za rad
           echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain" >> $GITHUB_ENV
           echo "/opt/OpenOrbis/PS4Toolchain/bin" >> $GITHUB_PATH
 
-      - name: Verify Toolchain Installation
-        run: |
-          echo "Provjera OpenOrbis lokacije: $OO_PS4_TOOLCHAIN"
-          ls -la $OO_PS4_TOOLCHAIN/bin
-          clang --version
-          ld.lld --version
-
-      - name: Compile PS4 Homebrew
+      - name: Compile and Package PS4 Homebrew
         run: |
           export OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain
           export PATH=$OO_PS4_TOOLCHAIN/bin:$PATH
           
-          # Ako tvoj Makefile koristi fiksne Windows putanje, zamijenićemo ih u letu za Linux
+          # Prilagođavanje Makefile-a za Linux ako ima Windows kosa crte (\)
           sed -i 's/\\/\//g' Makefile || true
           
           # Pokretanje kompajliranja
           make
 
-      - name: Upload Build Artifact
+      - name: Upload Finished PKG
         uses: actions/upload-artifact@v4
         with:
-          name: PS4-Homebrew-PKG
-          path: |
-            ./*.pkg
-            ./*.bin
-            ./*.elf
+          name: PS4-Project-Artifacts
+          path: ./*.pkg
