@@ -15,7 +15,7 @@
     <app_version>01.00</app_version>
     <sdk_version>04.508.001</sdk_version>
     <file_list>
-      <file orig_path="eboot.bin" dest_path="sce_module/eboot.bin" />
+      <file orig_path="sce_sys/eboot.bin" dest_path="sce_sys/eboot.bin" />
     </file_list>
   </content>
 </package>
