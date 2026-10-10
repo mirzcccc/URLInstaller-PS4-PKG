@@ -2,15 +2,18 @@ ifndef OO_PS4_TOOLCHAIN
 $(error OO_PS4_TOOLCHAIN is not set. Please set it to your OpenOrbis PS4 Toolchain directory)
 endif
 
+# Naziv tvoje aplikacije
 TARGET := URLInstaller
+
 CXX    := clang++
 OBJCOPY:= objcopy
 ODIR   := build
 
+# Standardne FreeBSD/PS4 postavke kompajlera
 CXXFLAGS := -target x86_64-pc-freebsd12-elf -fno-stack-protector -fPIC -O2 -Wall -std=c++17
 LDFLAGS  := -target x86_64-pc-freebsd12-elf -nostdlib -Wl,--art-extension -Wl,--eh-frame-hdr
 
-all: $(TARGET).pkg
+all: $(TARGET).bin
 
 $(ODIR)/main.o: main.cpp
 	@mkdir -p $(ODIR)
@@ -19,11 +22,10 @@ $(ODIR)/main.o: main.cpp
 $(TARGET).elf: $(ODIR)/main.o
 	$(CXX) $(ODIR)/main.o -o $@ $(LDFLAGS)
 
-$(TARGET).pkg: $(TARGET).elf
-	@mkdir -p sce_sys
-	$(OBJCOPY) --input-target=elf64-x86-64 --output-target=elf64-x86-64 --binary-architecture=i386:x86-64 $(TARGET).elf sce_sys/eboot.bin
-	orbis-pub-cmd img_create config.gp4 $(TARGET).pkg
-	@echo "--- PKG Uspjesno izgradjen! ---"
+# Pretvaranje u čisti .bin fajl koji PS4 payload loaders mogu učitati
+$(TARGET).bin: $(TARGET).elf
+	$(OBJCOPY) -O binary $(TARGET).elf $(TARGET).bin
+	@echo "--- PS4 BIN Uspjesno izgradjen! ---"
 
 clean:
-	rm -rf $(ODIR) $(TARGET).elf $(TARGET).pkg sce_sys/eboot.bin
+	rm -rf $(ODIR) $(TARGET).elf $(TARGET).bin
