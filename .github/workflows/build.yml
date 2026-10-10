@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    env:
+      TOOLCHAIN_ROOT: /tmp/orbis-toolchain
+      OPENORBIS_REPO: https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,20 +25,33 @@ jobs:
           set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential git curl ca-certificates xz-utils unzip python3
+            build-essential git curl ca-certificates xz-utils unzip python3 jq
 
       - name: Install OpenOrbis PS4 Toolchain
         shell: bash
         run: |
           set -euxo pipefail
 
-          TOOLCHAIN_ROOT="/tmp/orbis-toolchain"
           rm -rf "$TOOLCHAIN_ROOT"
+          mkdir -p "$TOOLCHAIN_ROOT"
 
-          git clone --single-branch https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git "$TOOLCHAIN_ROOT"
+          echo "Cloning OpenOrbis toolchain repository..."
+          git clone --depth=1 --recursive "$OPENORBIS_REPO" "$TOOLCHAIN_ROOT"
 
           echo "Checking toolchain repo layout..."
           find "$TOOLCHAIN_ROOT" -maxdepth 4 -type d | head -200 || true
+
+          # Prefer the normal source-build flow if the repo includes it
+          if [ -f "$TOOLCHAIN_ROOT/build.sh" ]; then
+            echo "Found build.sh; building OpenOrbis toolchain..."
+            (cd "$TOOLCHAIN_ROOT" && bash ./build.sh)
+          elif [ -f "$TOOLCHAIN_ROOT/build-toolchain.sh" ]; then
+            echo "Found build-toolchain.sh; building OpenOrbis toolchain..."
+            (cd "$TOOLCHAIN_ROOT" && bash ./build-toolchain.sh)
+          elif [ -f "$TOOLCHAIN_ROOT/Makefile" ]; then
+            echo "Found Makefile; building OpenOrbis toolchain..."
+            (cd "$TOOLCHAIN_ROOT" && make -j"$(nproc)")
+          fi
 
           mapfile -t toolchain_dirs < <(
             find "$TOOLCHAIN_ROOT" -type f \( \
@@ -45,32 +62,7 @@ jobs:
           )
 
           if [ "${#toolchain_dirs[@]}" -eq 0 ]; then
-            echo "No prebuilt OpenOrbis toolchain binaries were found; attempting to build the toolchain."
-
-            if [ -f "$TOOLCHAIN_ROOT/build.sh" ]; then
-              (cd "$TOOLCHAIN_ROOT" && ./build.sh)
-            elif [ -f "$TOOLCHAIN_ROOT/build-toolchain.sh" ]; then
-              (cd "$TOOLCHAIN_ROOT" && ./build-toolchain.sh)
-            elif [ -f "$TOOLCHAIN_ROOT/Makefile" ]; then
-              (cd "$TOOLCHAIN_ROOT" && make -j"$(nproc)")
-            else
-              echo "ERROR: No supported build script found in OpenOrbis toolchain repository."
-              echo "Repository contents:"
-              find "$TOOLCHAIN_ROOT" -maxdepth 5 -type f | head -200 || true
-              exit 1
-            fi
-
-            mapfile -t toolchain_dirs < <(
-              find "$TOOLCHAIN_ROOT" -type f \( \
-                -name 'orbis-clang++' -o \
-                -name 'orbis-objcopy' -o \
-                -name 'orbis-pub-gen' \
-              \) -printf '%h\n' | sort -u
-            )
-          fi
-
-          if [ "${#toolchain_dirs[@]}" -eq 0 ]; then
-            echo "ERROR: OpenOrbis toolchain binaries were not found."
+            echo "ERROR: No valid OpenOrbis toolchain binaries were produced."
             echo "Repository contents:"
             find "$TOOLCHAIN_ROOT" -maxdepth 5 -type f | head -200 || true
             exit 1
@@ -81,43 +73,34 @@ jobs:
 
           for dir in "${toolchain_dirs[@]}"; do
             echo "$dir" >> "$GITHUB_PATH"
+            export PATH="$dir:$PATH"
           done
 
           export PATH
-          PATH="$(printf '%s:' "${toolchain_dirs[@]}")$PATH"
-          export PATH
-
           echo "PATH updated with:"
           printf '%s\n' "${toolchain_dirs[@]}"
 
-          command -v orbis-clang++ || { echo "orbis-clang++ not found in PATH"; exit 1; }
-          command -v orbis-objcopy || { echo "orbis-objcopy not found in PATH"; exit 1; }
+          command -v orbis-clang++ >/dev/null 2>&1 || { echo "orbis-clang++ not found in PATH"; exit 1; }
+          command -v orbis-objcopy >/dev/null 2>&1 || { echo "orbis-objcopy not found in PATH"; exit 1; }
 
       - name: Build PS4 ELF and BIN
         shell: bash
         run: |
           set -euxo pipefail
 
-          if ! command -v orbis-clang++ >/dev/null 2>&1; then
-            mapfile -t toolchain_dirs < <(
-              find /tmp/orbis-toolchain -type f \( \
-                -name 'orbis-clang++' -o \
-                -name 'orbis-objcopy' \
-              \) -printf '%h\n' | sort -u
-            )
-            if [ "${#toolchain_dirs[@]}" -eq 0 ]; then
-              echo "ERROR: Could not locate toolchain after clone."
-              exit 1
-            fi
-            export PATH="$(printf '%s:' "${toolchain_dirs[@]}")$PATH"
-          fi
-
-          echo "Using toolchain from:"
-          command -v orbis-clang++
-          command -v orbis-objcopy
-
+          # Fix CRLF issues just in case
           sed -i 's/\r$//' Makefile || true
           sed -i 's/\r$//' main.cpp || true
+
+          # Make sure compiler is actually visible
+          command -v orbis-clang++ >/dev/null 2>&1 || {
+            echo "OpenOrbis clang not found; cannot build."
+            exit 1
+          }
+          command -v orbis-objcopy >/dev/null 2>&1 || {
+            echo "OpenOrbis objcopy not found; cannot build."
+            exit 1
+          }
 
           make clean || true
           make
@@ -128,13 +111,12 @@ jobs:
           set -euxo pipefail
 
           if ! command -v orbis-pub-gen >/dev/null 2>&1; then
-            echo "orbis-pub-gen not found in PATH."
-            echo "This repo can still build the PS4 .bin/.elf, but a valid PS4 .pkg requires the package tool and signing key."
+            echo "orbis-pub-gen not found in PATH; skipping PKG generation."
             exit 0
           fi
 
           if [ -f "config.gp4" ]; then
-            echo "Found orbis-pub-gen, generating PKG..."
+            echo "Found config.gp4; generating PKG..."
             orbis-pub-gen config.gp4
           else
             echo "config.gp4 not found; skipping pkg generation."
