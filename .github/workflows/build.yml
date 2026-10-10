@@ -9,11 +9,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     env:
       TOOLCHAIN_ROOT: /tmp/orbis-toolchain
       OPENORBIS_REPO: https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git
+      OPENORBIS_REF: main
+      TOOLCHAIN_CACHE_KEY: orbis-toolchain-${{ runner.os }}
 
     steps:
       - name: Checkout repository
@@ -25,16 +27,18 @@ jobs:
           set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential git curl ca-certificates xz-utils unzip python3 jq
+            build-essential git curl ca-certificates xz-utils unzip python3 jq \
+            autoconf automake libtool pkg-config bison flex texinfo \
+            gawk wget lbzip2 zlib1g-dev
 
       - name: Cache OpenOrbis toolchain
-        if: always()
+        id: cache-toolchain
         uses: actions/cache@v4
         with:
           path: ${{ env.TOOLCHAIN_ROOT }}
-          key: orbis-toolchain-${{ runner.os }}-${{ hashFiles('.github/workflows/build.yml') }}
+          key: ${{ env.TOOLCHAIN_CACHE_KEY }}-${{ github.run_id }}
           restore-keys: |
-            orbis-toolchain-${{ runner.os }}-
+            ${{ env.TOOLCHAIN_CACHE_KEY }}-
 
       - name: Install OpenOrbis PS4 Toolchain
         shell: bash
@@ -45,10 +49,13 @@ jobs:
           mkdir -p "$TOOLCHAIN_ROOT"
 
           echo "Cloning OpenOrbis toolchain repository..."
-          git clone --depth=1 --recursive "$OPENORBIS_REPO" "$TOOLCHAIN_ROOT"
+          if ! git clone --depth=1 --branch "$OPENORBIS_REF" --recurse-submodules "$OPENORBIS_REPO" "$TOOLCHAIN_ROOT"; then
+            echo "Failed to clone ref '$OPENORBIS_REF'; retrying with default branch..."
+            git clone --depth=1 --recurse-submodules "$OPENORBIS_REPO" "$TOOLCHAIN_ROOT"
+          fi
 
-          echo "Checking toolchain repo layout..."
-          find "$TOOLCHAIN_ROOT" -maxdepth 5 -type d | head -200 || true
+          echo "OpenOrbis repo layout:"
+          find "$TOOLCHAIN_ROOT" -maxdepth 3 -type f | head -200 || true
 
           TOOLCHAIN_BUILD_SCRIPT=""
           CANDIDATE_SCRIPTS=(
@@ -68,32 +75,44 @@ jobs:
           if [ -n "$TOOLCHAIN_BUILD_SCRIPT" ]; then
             echo "Found build script: $TOOLCHAIN_BUILD_SCRIPT"
             (cd "$(dirname "$TOOLCHAIN_BUILD_SCRIPT")" && bash "$(basename "$TOOLCHAIN_BUILD_SCRIPT")")
+          elif [ -f "$TOOLCHAIN_ROOT/CMakeLists.txt" ]; then
+            echo "Found CMakeLists.txt; configuring with CMake..."
+            mkdir -p "$TOOLCHAIN_ROOT/build"
+            (cd "$TOOLCHAIN_ROOT/build" && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j"$(nproc)")
           elif [ -f "$TOOLCHAIN_ROOT/Makefile" ]; then
-            echo "Found Makefile; building OpenOrbis toolchain..."
+            echo "Found Makefile; building toolchain..."
             (cd "$TOOLCHAIN_ROOT" && make -j"$(nproc)")
           else
-            echo "No supported OpenOrbis build script or Makefile found."
+            echo "ERROR: No supported OpenOrbis build mechanism found."
             echo "Repository contents:"
             find "$TOOLCHAIN_ROOT" -maxdepth 5 -type f | head -200 || true
             exit 1
           fi
 
+      - name: Locate toolchain binaries
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          echo "Finding orbis-clang++ and related binaries..."
+
           mapfile -t toolchain_dirs < <(
-            find "$TOOLCHAIN_ROOT" -type f \( \
+            find "$TOOLCHAIN_ROOT" -type f -executable \
               -name 'orbis-clang++' -o \
               -name 'orbis-objcopy' -o \
-              -name 'orbis-pub-gen' \
-            \) -printf '%h\n' | sort -u
+              -name 'orbis-pub-gen' 2>/dev/null \
+              | xargs -r -n1 dirname \
+              | sort -u
           )
 
           if [ "${#toolchain_dirs[@]}" -eq 0 ]; then
             echo "ERROR: No valid OpenOrbis toolchain binaries were produced."
-            echo "Repository contents:"
+            echo "Repository tree:"
             find "$TOOLCHAIN_ROOT" -maxdepth 5 -type f | head -200 || true
             exit 1
           fi
 
-          echo "Found toolchain binary directories:"
+          echo "Toolchain binary directories:"
           printf '%s\n' "${toolchain_dirs[@]}"
 
           for dir in "${toolchain_dirs[@]}"; do
@@ -102,14 +121,12 @@ jobs:
           done
 
           export PATH
-          echo "PATH updated with:"
-          printf '%s\n' "${toolchain_dirs[@]}"
-
           for bin in orbis-clang++ orbis-objcopy; do
             command -v "$bin" >/dev/null 2>&1 || {
-              echo "$bin not found in PATH"
+              echo "$bin not found in PATH after toolchain install"
               exit 1
             }
+            echo "Found: $(command -v "$bin")"
           done
 
       - name: Build PS4 ELF and BIN
@@ -117,7 +134,6 @@ jobs:
         run: |
           set -euxo pipefail
 
-          # Fix CRLF issues just in case
           sed -i 's/\r$//' Makefile || true
           sed -i 's/\r$//' main.cpp || true
 
@@ -133,24 +149,29 @@ jobs:
           make clean || true
           make -j"$(nproc)"
 
-      - name: Generate PS4 package if packaging tool is available
+          echo "Artifacts:"
+          ls -lh ./*.bin ./*.elf 2>/dev/null || true
+
+      - name: Generate PS4 package if available
         shell: bash
+        continue-on-error: true
         run: |
           set -euxo pipefail
 
           if ! command -v orbis-pub-gen >/dev/null 2>&1; then
-            echo "orbis-pub-gen not found in PATH; skipping PKG generation."
+            echo "orbis-pub-gen not found; skipping PKG generation."
             exit 0
           fi
 
           if [ -f "config.gp4" ]; then
-            echo "Found config.gp4; generating PKG..."
+            echo "Found config.gp4; generating package..."
             orbis-pub-gen config.gp4
           else
-            echo "config.gp4 not found; skipping pkg generation."
+            echo "config.gp4 not found; skipping PKG generation."
           fi
 
       - name: Upload build artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: PS4-build-artifacts
@@ -158,3 +179,4 @@ jobs:
             ./*.bin
             ./*.elf
             ./*.pkg
+          if-no-files-found: warn
