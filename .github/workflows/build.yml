@@ -28,16 +28,16 @@ jobs:
         run: |
           set -euxo pipefail
 
-          rm -rf /tmp/orbis-toolchain
+          TOOLCHAIN_ROOT="/tmp/orbis-toolchain"
+          rm -rf "$TOOLCHAIN_ROOT"
 
-          # Full clone: some toolchain repos do not expose binaries in the shallow/truncated layout
-          git clone --single-branch https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git /tmp/orbis-toolchain
+          git clone --single-branch https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git "$TOOLCHAIN_ROOT"
+
           echo "Checking toolchain repo layout..."
-          find /tmp/orbis-toolchain -maxdepth 4 -type d | head -200 || true
+          find "$TOOLCHAIN_ROOT" -maxdepth 4 -type d | head -200 || true
 
-          # Find actual binary directories recursively
           mapfile -t toolchain_dirs < <(
-            find /tmp/orbis-toolchain -type f \( \
+            find "$TOOLCHAIN_ROOT" -type f \( \
               -name 'orbis-clang++' -o \
               -name 'orbis-objcopy' -o \
               -name 'orbis-pub-gen' \
@@ -45,21 +45,44 @@ jobs:
           )
 
           if [ "${#toolchain_dirs[@]}" -eq 0 ]; then
+            echo "No prebuilt OpenOrbis toolchain binaries were found; attempting to build the toolchain."
+
+            if [ -f "$TOOLCHAIN_ROOT/build.sh" ]; then
+              (cd "$TOOLCHAIN_ROOT" && ./build.sh)
+            elif [ -f "$TOOLCHAIN_ROOT/build-toolchain.sh" ]; then
+              (cd "$TOOLCHAIN_ROOT" && ./build-toolchain.sh)
+            elif [ -f "$TOOLCHAIN_ROOT/Makefile" ]; then
+              (cd "$TOOLCHAIN_ROOT" && make -j"$(nproc)")
+            else
+              echo "ERROR: No supported build script found in OpenOrbis toolchain repository."
+              echo "Repository contents:"
+              find "$TOOLCHAIN_ROOT" -maxdepth 5 -type f | head -200 || true
+              exit 1
+            fi
+
+            mapfile -t toolchain_dirs < <(
+              find "$TOOLCHAIN_ROOT" -type f \( \
+                -name 'orbis-clang++' -o \
+                -name 'orbis-objcopy' -o \
+                -name 'orbis-pub-gen' \
+              \) -printf '%h\n' | sort -u
+            )
+          fi
+
+          if [ "${#toolchain_dirs[@]}" -eq 0 ]; then
             echo "ERROR: OpenOrbis toolchain binaries were not found."
             echo "Repository contents:"
-            find /tmp/orbis-toolchain -maxdepth 5 -type f | head -200 || true
+            find "$TOOLCHAIN_ROOT" -maxdepth 5 -type f | head -200 || true
             exit 1
           fi
 
           echo "Found toolchain binary directories:"
           printf '%s\n' "${toolchain_dirs[@]}"
 
-          # Add each real binary directory to PATH for later steps
           for dir in "${toolchain_dirs[@]}"; do
             echo "$dir" >> "$GITHUB_PATH"
           done
 
-          # Also export PATH in this shell so the verification commands below work
           export PATH
           PATH="$(printf '%s:' "${toolchain_dirs[@]}")$PATH"
           export PATH
@@ -75,7 +98,6 @@ jobs:
         run: |
           set -euxo pipefail
 
-          # If PATH wasn't persisted for this step, recover it from the repo
           if ! command -v orbis-clang++ >/dev/null 2>&1; then
             mapfile -t toolchain_dirs < <(
               find /tmp/orbis-toolchain -type f \( \
