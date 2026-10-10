@@ -31,8 +31,7 @@ jobs:
           rm -rf /tmp/orbis-toolchain
 
           # Full clone: some toolchain repos do not expose binaries in the shallow/truncated layout
-          git clone --branch main --single-branch https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git /tmp/orbis-toolchain
-
+          git clone --single-branch https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git /tmp/orbis-toolchain
           echo "Checking toolchain repo layout..."
           find /tmp/orbis-toolchain -maxdepth 4 -type d | head -200 || true
 
