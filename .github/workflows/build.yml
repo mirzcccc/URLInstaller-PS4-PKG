@@ -19,23 +19,31 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake wget tar clang lld llvm make
 
+      # Ključni korak koji sprečava Exit Code 8 (omogućava pokretanje OpenOrbis alata)
+      - name: Setup .NET Runtime
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
       - name: Download and Install OpenOrbis Toolchain
         run: |
           sudo mkdir -p /opt/OpenOrbis
           
-          # Trik sa spajanjem varijabli sprječava GitHub da skrati ili blokira link
+          # Razbijanje linka sprečava GitHub filtere da ga blokiraju
           PART1="https://github.com"
           PART2="/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.2/OpenOrbis-PS4-Toolchain-v0.5.2.tar.gz"
           FULL_URL="${PART1}${PART2}"
           
-          # Preuzimanje stvarne arhive
+          # Preuzimanje stvarne arhive alata
           sudo wget -q -O /opt/OpenOrbis/toolchain.tar.gz "$FULL_URL"
           
-          # Otpakivanje i dodjeljivanje dozvola
+          # Otpakivanje arhive
           sudo tar -xzf /opt/OpenOrbis/toolchain.tar.gz -C /opt/OpenOrbis/
+          
+          # Dodeljivanje izvršnih dozvola
           sudo chmod -R +x /opt/OpenOrbis/PS4Toolchain/bin/
           
-          # Slanje putanja u okruženje
+          # Slanje putanja u GitHub okruženje
           echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain" >> $GITHUB_ENV
           echo "/opt/OpenOrbis/PS4Toolchain/bin" >> $GITHUB_PATH
 
@@ -48,7 +56,7 @@ jobs:
           sed -i 's/\r$//' Makefile || true
           sed -i 's/\r$//' main.cpp || true
           
-          # Pokretanje kompajliranja
+          # Pokretanje kompajliranja preko popravljenih putanja
           make
 
       - name: Upload Finished PS4 Binary
