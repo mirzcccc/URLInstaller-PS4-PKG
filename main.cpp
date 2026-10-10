@@ -1,14 +1,11 @@
-#include <stdio.h>
+#include <stddef.h>
 
-// Osnovne PS4 funkcije iz OpenOrbis SDK-a
-extern "C" {
-    int sceUserServiceInitialize(void* args);
+// Osnovni ulaz za PS4 payload loader
+extern "C" int _start(void* args) {
+    // Tvoj kod se izvršava ovdje
+    return 0;
 }
 
 int main(int argc, char* argv[]) {
-    // Inicijalizacija osnovnog PS4 servisa
-    sceUserServiceInitialize(NULL);
-    
-    printf("URLInstaller je uspjesno pokrenut na PS4!\n");
     return 0;
 }
