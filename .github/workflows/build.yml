@@ -1,4 +1,4 @@
-name: Build PS4 Homebrew PKG
+name: Build PS4 Homebrew Binary
 
 on:
   push:
@@ -14,42 +14,39 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup .NET Runtime (Required for OpenOrbis Tools)
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '6.0.x'
-
-      - name: Install Tools and Compilers
+      - name: Install Compilers and Build Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake wget tar clang lld llvm make
 
       - name: Download and Install OpenOrbis Toolchain
         run: |
+          # Preuzimanje čistog OpenOrbis lanca alata
           wget https://github.com
           sudo mkdir -p /opt/OpenOrbis
           sudo tar -xzf OpenOrbis-PS4-Toolchain-v0.5.2.tar.gz -C /opt/OpenOrbis
           sudo chmod -R +x /opt/OpenOrbis/PS4Toolchain/bin/
           
-          # Definisanje okruženja za rad
+          # Mapiranje okruženja
           echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain" >> $GITHUB_ENV
           echo "/opt/OpenOrbis/PS4Toolchain/bin" >> $GITHUB_PATH
 
-      - name: Compile and Package PS4 Homebrew
+      - name: Compile PS4 Source Code
         run: |
           export OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain
           export PATH=$OO_PS4_TOOLCHAIN/bin:$PATH
           
-          # Čišćenje skrivenih Windows oznaka za kraj reda (CRLF u LF)
+          # Čišćenje potencijalnih skrivenih Windows simbola
           sed -i 's/\r$//' Makefile || true
-          sed -i 's/\r$//' config.gp4 || true
           sed -i 's/\r$//' main.cpp || true
           
           # Pokretanje kompajliranja
           make
 
-      - name: Upload Finished PKG
+      - name: Upload Finished PS4 Binary
         uses: actions/upload-artifact@v4
         with:
-          name: PS4-Project-Artifacts
-          path: ./*.pkg
+          name: PS4-Executable-Binaries
+          path: |
+            ./*.bin
+            ./*.elf
