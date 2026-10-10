@@ -21,9 +21,7 @@ $(TARGET).elf: $(ODIR)/main.o
 
 $(TARGET).pkg: $(TARGET).elf
 	@mkdir -p sce_sys
-	# Pravljenje eboot-a direktno u sce_sys folderu
 	$(OBJCOPY) --input-target=elf64-x86-64 --output-target=elf64-x86-64 --binary-architecture=i386:x86-64 $(TARGET).elf sce_sys/eboot.bin
-	# Pokretanje OpenOrbis alata za izradu PKG-a preko config.gp4 projekta
 	orbis-pub-cmd img_create config.gp4 $(TARGET).pkg
 	@echo "--- PKG Uspjesno izgradjen! ---"
 
