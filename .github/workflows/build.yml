@@ -14,23 +14,36 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install OpenOrbis Toolchain
+      - name: Setup .NET Runtime (Required for OpenOrbis Tools)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install Compilers and Toolchain Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake wget tar clang llvm
-          # Preuzimanje i instalacija najnovijeg OpenOrbis SDK-a sa zvaničnog repozitorija
-          wget https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.2/OpenOrbis-PS4-Toolchain-v0.5.2.tar.gz
-          sudo tar -xzf OpenOrbis-PS4-Toolchain-v0.5.2.tar.gz -C /opt
+          sudo apt-get install -y cmake wget tar clang lld llvm make
+
+      - name: Download and Install OpenOrbis Toolchain
+        run: |
+          # Preuzimanje zvaničnog Linux izdanja OpenOrbis SDK-a
+          wget https://github.com
+          sudo mkdir -p /opt/OpenOrbis
+          sudo tar -xzf OpenOrbis-PS4-Toolchain-v0.5.2.tar.gz -C /opt/OpenOrbis
+          
+          # Davanje izvršnih dozvola svim binarnim fajlovima unutar toolchain-a
+          sudo chmod +x /opt/OpenOrbis/PS4Toolchain/bin/*
+          
+          # Postavljanje varijabli u GitHub okruženje
           echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain" >> $GITHUB_ENV
           echo "/opt/OpenOrbis/PS4Toolchain/bin" >> $GITHUB_PATH
 
       - name: Build PS4 Homebrew PKG
         run: |
-          # Postavljanje varijable okruženja za trenutni korak u slučaju da se PATH još nije osvježio
           export OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain
           export PATH=$OO_PS4_TOOLCHAIN/bin:$PATH
           
-          # Pokretanje kompajliranja iz korijenskog direktorija (slash /)
+          # Pokretanje kompajliranja
           make
 
       - name: Upload Build Artifact
