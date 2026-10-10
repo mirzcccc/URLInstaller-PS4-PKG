@@ -8,40 +8,50 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup .NET Runtime (Required for OpenOrbis Tools)
+      - name: Setup .NET Runtime (Required for Toolchain Tools)
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '6.0.x'
 
-      - name: Install Compilers and Toolchain Dependencies
+      - name: Install Compilers and Build Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake wget tar clang lld llvm make
 
-      - name: Download and Install OpenOrbis Toolchain
+      - name: Download and Fix OpenOrbis Linux Toolchain
         run: |
-          # Preuzimanje zvaničnog Linux izdanja OpenOrbis SDK-a
+          # Preuzimanje zvaničnog OpenOrbis izdanja
           wget https://github.com
           sudo mkdir -p /opt/OpenOrbis
           sudo tar -xzf OpenOrbis-PS4-Toolchain-v0.5.2.tar.gz -C /opt/OpenOrbis
           
-          # Davanje izvršnih dozvola svim binarnim fajlovima unutar toolchain-a
-          sudo chmod +x /opt/OpenOrbis/PS4Toolchain/bin/*
+          # KLJUČNI KORAK: Pretvaranje Windows linijskih završetaka u Linux ako postoje i davanje dozvola
+          sudo chmod -R +x /opt/OpenOrbis/PS4Toolchain/bin/
           
-          # Postavljanje varijabli u GitHub okruženje
+          # Postavljanje varijabli okruženja
           echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain" >> $GITHUB_ENV
           echo "/opt/OpenOrbis/PS4Toolchain/bin" >> $GITHUB_PATH
 
-      - name: Build PS4 Homebrew PKG
+      - name: Verify Toolchain Installation
+        run: |
+          echo "Provjera OpenOrbis lokacije: $OO_PS4_TOOLCHAIN"
+          ls -la $OO_PS4_TOOLCHAIN/bin
+          clang --version
+          ld.lld --version
+
+      - name: Compile PS4 Homebrew
         run: |
           export OO_PS4_TOOLCHAIN=/opt/OpenOrbis/PS4Toolchain
           export PATH=$OO_PS4_TOOLCHAIN/bin:$PATH
+          
+          # Ako tvoj Makefile koristi fiksne Windows putanje, zamijenićemo ih u letu za Linux
+          sed -i 's/\\/\//g' Makefile || true
           
           # Pokretanje kompajliranja
           make
@@ -50,4 +60,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PS4-Homebrew-PKG
-          path: ./*.pkg
+          path: |
+            ./*.pkg
+            ./*.bin
+            ./*.elf
